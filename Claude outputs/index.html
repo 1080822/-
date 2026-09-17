@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>匿名掲示板</title>
+<link rel="stylesheet" href="style.css" />
+<script src="gateCheck.js"></script>
+</head>
+<body>
+<header class="site-header">
+  <div class="site-header-inner">
+    <a href="#/" class="logo">📋 匿名交流掲示板</a>
+    <div class="my-id" id="my-id">ID: ---</div>
+  </div>
+</header>
+
+<main id="app" class="container"></main>
+
+<template id="tpl-list">
+  <div class="toolbar">
+    <div class="tabs">
+      <button class="tab" data-tab="active">現行スレ</button>
+      <button class="tab" data-tab="archived">過去スレ</button>
+      <button class="tab" data-tab="bookmarks">お気に入り</button>
+    </div>
+    <button class="btn btn-primary" id="new-thread-btn">＋ 新規スレッド</button>
+  </div>
+
+  <div class="new-thread-form hidden" id="new-thread-form">
+    <input type="text" id="new-thread-title" placeholder="スレッドタイトル" maxlength="100" />
+    <textarea id="new-thread-content" placeholder="本文（最初の書き込み）" maxlength="2000" rows="4"></textarea>
+    <div class="form-actions">
+      <span class="hint">名前欄はありません。投稿すると匿名IDが自動で付きます。</span>
+      <div>
+        <button class="btn" id="new-thread-cancel">キャンセル</button>
+        <button class="btn btn-primary" id="new-thread-submit">スレを立てる</button>
+      </div>
+    </div>
+  </div>
+
+  <ul class="thread-list" id="thread-list"></ul>
+  <p class="empty-msg hidden" id="empty-msg">スレッドはまだありません。</p>
+</template>
+
+<template id="tpl-thread">
+  <div class="thread-header">
+    <a href="#/" class="back-link">← 一覧に戻る</a>
+    <h2 id="thread-title"></h2>
+    <div class="thread-meta" id="thread-meta"></div>
+  </div>
+  <ol class="reply-list" id="reply-list"></ol>
+
+  <div class="reply-form" id="reply-form">
+    <textarea id="reply-content" placeholder="レスを書き込む" maxlength="2000" rows="3"></textarea>
+    <div class="form-actions">
+      <span class="hint" id="reply-hint"></span>
+      <button class="btn btn-primary" id="reply-submit">書き込む</button>
+    </div>
+  </div>
+  <p class="empty-msg hidden" id="archived-msg">このスレッドは1000到達のため過去スレになりました。書き込みはできません。</p>
+</template>
+
+<div class="modal-backdrop hidden" id="report-modal">
+  <div class="modal">
+    <h3>通報する</h3>
+    <p class="hint">運営に通報します。理由は任意です。</p>
+    <textarea id="report-reason" maxlength="300" rows="3" placeholder="（任意）理由"></textarea>
+    <div class="form-actions">
+      <button class="btn" id="report-cancel">キャンセル</button>
+      <button class="btn btn-danger" id="report-submit">通報する</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast hidden" id="toast"></div>
+
+<script src="supabase-config.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+<script src="supabaseClient.js"></script>
+<script src="identity.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

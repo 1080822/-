@@ -1,0 +1,135 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>パスワード | 108掲示板</title>
+<style>
+  :root { --bg:#f4f5f7; --panel:#fff; --border:#dcdfe4; --text:#26282c; --accent:#3d7bfd; --danger:#e0445b; }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--bg);
+    font-family: -apple-system, BlinkMacSystemFont, "Hiragino Kaku Gothic ProN", "Yu Gothic", "Segoe UI", sans-serif;
+    color: var(--text);
+  }
+  .box {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 28px 24px;
+    width: 90%;
+    max-width: 320px;
+    text-align: center;
+  }
+  .box h1 { font-size: 17px; margin: 0 0 6px; }
+  .box p { font-size: 13px; color: #767b85; margin: 0 0 16px; }
+  input[type="password"] {
+    width: 100%;
+    padding: 10px 12px;
+    font-size: 16px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    margin-bottom: 12px;
+    text-align: center;
+    letter-spacing: 2px;
+  }
+  button {
+    width: 100%;
+    padding: 10px;
+    border: none;
+    border-radius: 6px;
+    background: var(--accent);
+    color: #fff;
+    font-size: 14px;
+    cursor: pointer;
+  }
+  button:hover { opacity: 0.9; }
+  button:disabled { opacity: 0.6; cursor: default; }
+  .error { color: var(--danger); font-size: 12px; margin-top: 10px; min-height: 16px; }
+</style>
+</head>
+<body>
+  <div class="box">
+    <h1>108掲示板</h1>
+    <p>入場にはパスワードが必要です</p>
+    <input type="password" id="password" inputmode="numeric" placeholder="パスワードを入力" autofocus />
+    <button id="submit">入る</button>
+    <div class="error" id="error"></div>
+  </div>
+
+<script src="supabase-config.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+<script src="supabaseClient.js"></script>
+<script>
+  // ※ このサイトは静的ファイルのみで動くため、この入り口パスワードは
+  //   「見た目上の関門」であり、厳密なセキュリティ機能ではありません
+  //   （ページのソースを見れば誰でも中身がわかります）。
+
+  // ここに、Supabaseの「Authentication → Users」で作成した
+  // 管理者アカウントのメールアドレス・パスワードをそのまま入力してください。
+  //
+  // 【重要】この2つの値はここに書いた時点で「ページのソースを表示」すれば
+  // 誰でも読める状態になります。サイトを見た人はこの情報だけで管理者としてログインでき、
+  // 全スレッド・全レスの削除やBANなど、あなたと全く同じ権限を持ててしまいます。
+  // このリスクを理解したうえで、自己責任でご利用ください。
+  const ADMIN_AUTO_LOGIN_EMAIL = '108@888yunko.com';
+  const ADMIN_AUTO_LOGIN_PASSWORD = '108100308';
+
+  const SITE_PASSWORD = '108801';
+  const ADMIN_GATE_PASSWORD = '108100308';
+  const GATE_KEY = 'board_gate_ok_v1';
+
+  const input = document.getElementById('password');
+  const btn = document.getElementById('submit');
+  const errorEl = document.getElementById('error');
+
+  async function submit() {
+    const password = input.value;
+    errorEl.textContent = '';
+    if (!password) return;
+
+    if (password === ADMIN_GATE_PASSWORD) {
+      btn.disabled = true;
+      btn.textContent = 'ログイン中...';
+      try {
+        const { error } = await window.sb.auth.signInWithPassword({
+          email: ADMIN_AUTO_LOGIN_EMAIL,
+          password: ADMIN_AUTO_LOGIN_PASSWORD,
+        });
+        if (error) {
+          errorEl.textContent =
+            '管理者への自動ログインに失敗しました。gate.html内のADMIN_AUTO_LOGIN_EMAIL / ADMIN_AUTO_LOGIN_PASSWORDが正しいか確認してください。';
+          btn.disabled = false;
+          btn.textContent = '入る';
+          return;
+        }
+      } catch (e) {
+        errorEl.textContent = '通信に失敗しました。しばらくしてから試してください。';
+        btn.disabled = false;
+        btn.textContent = '入る';
+        return;
+      }
+      sessionStorage.setItem(GATE_KEY, '1');
+      location.href = 'admin.html';
+    } else if (password === SITE_PASSWORD) {
+      sessionStorage.setItem(GATE_KEY, '1');
+      location.href = 'index.html';
+    } else {
+      errorEl.textContent = 'パスワードが違います。';
+      input.value = '';
+      input.focus();
+    }
+  }
+
+  btn.addEventListener('click', submit);
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') submit();
+  });
+</script>
+</body>
+</html>

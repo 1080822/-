@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>管理者ページ | 匿名掲示板</title>
+<link rel="stylesheet" href="style.css" />
+<script src="gateCheck.js"></script>
+<style>
+  .login-box { max-width: 320px; margin: 60px auto; background: #fff; border: 1px solid var(--border); border-radius: var(--radius); padding: 20px; }
+  .login-box input { width: 100%; padding: 8px 10px; margin-bottom: 10px; border: 1px solid var(--border); border-radius: 6px; box-sizing: border-box; }
+  .admin-tabs { display: flex; gap: 4px; background: #fff; border: 1px solid var(--border); border-radius: var(--radius); padding: 3px; margin-bottom: 14px; width: fit-content; }
+  .card { background: #fff; border: 1px solid var(--border); border-radius: var(--radius); padding: 12px 14px; margin-bottom: 10px; }
+  .card-head { display: flex; justify-content: space-between; font-size: 12px; color: var(--text-muted); margin-bottom: 6px; gap: 10px; flex-wrap: wrap; }
+  .card-body { white-space: pre-wrap; word-break: break-word; font-size: 14px; margin-bottom: 8px; }
+  .card-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+  .reason-tag { color: var(--danger); font-size: 12px; margin-bottom: 8px; }
+  .topbar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; flex-wrap: wrap; gap: 10px; }
+  .login-error { color: var(--danger); font-size: 12px; min-height: 16px; margin-bottom: 6px; }
+</style>
+</head>
+<body>
+<header class="site-header">
+  <div class="site-header-inner">
+    <a href="index.html" class="logo">🛠 管理者ページ</a>
+    <div id="admin-status" class="my-id"></div>
+  </div>
+</header>
+<main class="container" id="app"></main>
+<div class="toast hidden" id="toast"></div>
+
+<script src="supabase-config.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+<script src="supabaseClient.js"></script>
+<script src="admin.js"></script>
+</body>
+</html>

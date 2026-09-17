@@ -1023,7 +1023,7 @@
 
     if (canDeleteThread) {
       document.getElementById('delete-thread-btn').addEventListener('click', async () => {
-        if (!confirm('このスレッドを削除します。よろしいですか？')) return;
+        if (!(await askConfirm('このスレッドを削除します。よろしいですか？'))) return;
         const { error } = await window.sb.rpc('delete_thread', {
           p_thread_id: id,
           p_requester_token_hash: state.identity.tokenHash,
@@ -1093,7 +1093,7 @@
 
       const deleteBtn = e.target.closest('.delete-link');
       if (deleteBtn) {
-        if (!confirm('このレスを削除します。よろしいですか？')) return;
+        if (!(await askConfirm('このレスを削除します。よろしいですか？'))) return;
         const replyId = Number(deleteBtn.dataset.id);
         const target = repliesById.get(replyId);
         const { error } = await window.sb.rpc('delete_reply', {
@@ -1226,6 +1226,33 @@
       )
       .subscribe();
   }
+
+  // ---------- 確認モーダル（削除確認用） ----------
+  // ネイティブのconfirm()は、スマホでホーム画面に追加して開いた場合（PWA的な使い方）などで
+  // ダイアログ自体が表示されずに即falseが返ってくることがあり、「削除ボタンを押しても反応しない」
+  // ように見える原因になる。そのためページ内の独自モーダルで代用する。
+  const confirmModalEl = document.getElementById('confirm-modal');
+  const confirmModalMessageEl = document.getElementById('confirm-modal-message');
+  let confirmModalResolve = null;
+  function askConfirm(message) {
+    return new Promise((resolve) => {
+      confirmModalMessageEl.textContent = message;
+      confirmModalResolve = resolve;
+      confirmModalEl.classList.remove('hidden');
+    });
+  }
+  function closeConfirmModal(result) {
+    confirmModalEl.classList.add('hidden');
+    if (confirmModalResolve) {
+      confirmModalResolve(result);
+      confirmModalResolve = null;
+    }
+  }
+  document.getElementById('confirm-modal-cancel').addEventListener('click', () => closeConfirmModal(false));
+  document.getElementById('confirm-modal-ok').addEventListener('click', () => closeConfirmModal(true));
+  confirmModalEl.addEventListener('click', (e) => {
+    if (e.target === confirmModalEl) closeConfirmModal(false);
+  });
 
   // ---------- 通報モーダル ----------
   const reportModal = document.getElementById('report-modal');

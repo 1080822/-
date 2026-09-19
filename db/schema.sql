@@ -1,17 +1,3 @@
--- 匿名交流掲示板 データベース定義
--- Supabaseの「SQL Editor」にこの内容を貼り付けて実行してください（1回だけでOK）。
---
--- 設計方針:
---   Node.jsサーバーを使わず、ブラウザから直接Supabaseに接続するため、
---   「誰が何をしてよいか」のルールはすべてこのSQL側（RLS + 関数）で守ります。
---   - 一般の閲覧・投稿・いいね・通報 → 誰でも実行できる関数
---   - スレッド削除（自分の立てたスレッドのみ） → 関数内でトークンを照合
---   - レス削除・BAN・通報対応など → Supabase Authでログインした人（＝管理者）のみ実行可能
---     （このサイトには新規登録フォームが無いので、Supabase側でユーザーを1人作れば、
---      　その人だけが管理者になります）
-
--- ========== テーブル ==========
-
 create table if not exists threads (
   id bigint generated always as identity primary key,
   title text not null,
@@ -25,7 +11,6 @@ create table if not exists threads (
   thumbnail_path text
 );
 
--- スレッド一覧に表示するサムネイル画像（新規スレッド作成時に選択・任意）
 alter table threads add column if not exists thumbnail_path text;
 
 create table if not exists replies (
@@ -41,8 +26,6 @@ create table if not exists replies (
   image_paths text[]
 );
 
--- 画像を複数枚添付できるように、配列カラムに統一する。
--- （以前のバージョンで作った単数カラムimage_pathが残っていれば、中身を引き継いでから削除する）
 alter table replies add column if not exists image_paths text[];
 do $$
 begin
@@ -85,10 +68,9 @@ create index if not exists idx_threads_sort on threads(is_archived, is_deleted, 
 create index if not exists idx_replies_thread on replies(thread_id, number);
 create index if not exists idx_reports_status on reports(status);
 create index if not exists idx_bans_active on bans(active);
-
--- ========== RLS（行レベルセキュリティ）==========
--- テーブルへの直接書き込みは禁止し、下の関数（RPC）経由だけに限定する。
--- 閲覧（SELECT）は掲示板として必要な範囲のみ許可する。
+create index if not exists idx_threads_creator_token on threads(creator_token_hash, created_at desc);
+create index if not exists idx_replies_author_token on replies(author_token_hash, created_at desc);
+create index if not exists idx_reports_reporter_token on reports(reporter_token_hash, created_at desc);
 
 alter table threads enable row level security;
 alter table replies enable row level security;
@@ -105,16 +87,11 @@ create policy replies_select on replies for select using (true);
 drop policy if exists likes_select on likes;
 create policy likes_select on likes for select using (true);
 
--- 通報・BAN一覧は管理者（ログイン済み）だけが見られる
 drop policy if exists reports_select on reports;
 create policy reports_select on reports for select using (auth.role() = 'authenticated');
 
 drop policy if exists bans_select on bans;
 create policy bans_select on bans for select using (auth.role() = 'authenticated');
-
--- テーブルへの直接 insert/update/delete は誰にも許可しない（関数経由のみ）
-
--- ========== 内部ヘルパー関数 ==========
 
 create or replace function is_banned(p_token_hash text)
 returns boolean
@@ -140,9 +117,47 @@ begin
 end;
 $$;
 
--- ========== 一般ユーザーが使う関数 ==========
+create extension if not exists pg_net with schema extensions;
+create extension if not exists supabase_vault;
 
--- スレッド新規作成（最初のレスも同時に作る）
+create or replace function delete_storage_objects(p_paths text[])
+returns void
+language plpgsql
+security definer
+set search_path = public, extensions, vault
+as $$
+declare
+  v_key text;
+  v_path text;
+begin
+  if p_paths is null or array_length(p_paths, 1) is null then
+    return;
+  end if;
+
+  select decrypted_secret into v_key
+  from vault.decrypted_secrets
+  where name = 'post_images_service_role_key'
+  limit 1;
+
+  if v_key is null then
+    return;
+  end if;
+
+  foreach v_path in array p_paths loop
+    if v_path is null or length(trim(v_path)) = 0 then
+      continue;
+    end if;
+    perform net.http_delete(
+      url := 'https://cohttpxzniquypkhalio.supabase.co/storage/v1/object/post-images/' || v_path,
+      headers := jsonb_build_object(
+        'Authorization', 'Bearer ' || v_key,
+        'apikey', v_key
+      )
+    );
+  end loop;
+end;
+$$;
+
 drop function if exists create_thread(text, text, text, text);
 drop function if exists create_thread(text, text, text, text, text);
 drop function if exists create_thread(text, text, text, text, text[]);
@@ -161,12 +176,18 @@ as $$
 declare
   v_thread_id bigint;
   v_now bigint := (extract(epoch from now()) * 1000)::bigint;
+  v_last_at bigint;
 begin
   if is_banned(p_author_token_hash) then
     raise exception 'banned';
   end if;
   if length(trim(p_title)) = 0 or (length(trim(p_content)) = 0 and (p_image_paths is null or array_length(p_image_paths, 1) is null)) then
     raise exception 'invalid_input';
+  end if;
+
+  select max(created_at) into v_last_at from threads where creator_token_hash = p_author_token_hash;
+  if v_last_at is not null and v_now - v_last_at < 30000 then
+    raise exception 'rate_limited';
   end if;
 
   insert into threads (title, creator_id, creator_token_hash, created_at, last_reply_at, reply_count, is_archived, is_deleted, thumbnail_path)
@@ -180,7 +201,6 @@ begin
 end;
 $$;
 
--- レス投稿（1000到達で自動的に過去スレ化）
 drop function if exists add_reply(bigint, text, text, text);
 drop function if exists add_reply(bigint, text, text, text, text);
 create or replace function add_reply(
@@ -199,12 +219,18 @@ declare
   v_next_number integer;
   v_will_archive boolean;
   v_now bigint := (extract(epoch from now()) * 1000)::bigint;
+  v_last_at bigint;
 begin
   if is_banned(p_author_token_hash) then
     raise exception 'banned';
   end if;
   if length(trim(p_content)) = 0 and (p_image_paths is null or array_length(p_image_paths, 1) is null) then
     raise exception 'invalid_input';
+  end if;
+
+  select max(created_at) into v_last_at from replies where author_token_hash = p_author_token_hash;
+  if v_last_at is not null and v_now - v_last_at < 3000 then
+    raise exception 'rate_limited';
   end if;
 
   select * into v_thread from threads where id = p_thread_id and is_deleted = false for update;
@@ -228,7 +254,6 @@ begin
 end;
 $$;
 
--- いいねのトグル
 create or replace function toggle_like(
   p_reply_id bigint,
   p_user_token_hash text
@@ -255,7 +280,6 @@ begin
 end;
 $$;
 
--- 通報の作成
 create or replace function create_report(
   p_reply_id bigint,
   p_reason text,
@@ -267,17 +291,26 @@ set search_path = public
 as $$
 declare
   v_thread_id bigint;
+  v_now bigint := (extract(epoch from now()) * 1000)::bigint;
+  v_last_at bigint;
 begin
   select thread_id into v_thread_id from replies where id = p_reply_id;
   if not found then
     raise exception 'not_found';
   end if;
+
+  if p_reporter_token_hash is not null then
+    select max(created_at) into v_last_at from reports where reporter_token_hash = p_reporter_token_hash;
+    if v_last_at is not null and v_now - v_last_at < 10000 then
+      raise exception 'rate_limited';
+    end if;
+  end if;
+
   insert into reports (thread_id, reply_id, reason, reporter_token_hash, created_at, status)
-  values (v_thread_id, p_reply_id, left(coalesce(p_reason, ''), 300), p_reporter_token_hash, (extract(epoch from now()) * 1000)::bigint, 'pending');
+  values (v_thread_id, p_reply_id, left(coalesce(p_reason, ''), 300), p_reporter_token_hash, v_now, 'pending');
 end;
 $$;
 
--- スレッド削除（本人 or 管理者）
 create or replace function delete_thread(
   p_thread_id bigint,
   p_requester_token_hash text
@@ -289,6 +322,7 @@ as $$
 declare
   v_thread threads%rowtype;
   v_is_admin boolean := auth.role() = 'authenticated';
+  v_all_paths text[];
 begin
   select * into v_thread from threads where id = p_thread_id;
   if not found then
@@ -300,10 +334,19 @@ begin
 
   update threads set is_deleted = true where id = p_thread_id;
   update replies set is_deleted = true where thread_id = p_thread_id;
+
+  select coalesce(array_agg(distinct p), array[]::text[]) into v_all_paths
+  from replies r, unnest(r.image_paths) as p
+  where r.thread_id = p_thread_id;
+
+  if v_thread.thumbnail_path is not null then
+    v_all_paths := array_append(v_all_paths, v_thread.thumbnail_path);
+  end if;
+
+  perform delete_storage_objects(v_all_paths);
 end;
 $$;
 
--- レス削除（本人 or 管理者）
 create or replace function delete_reply(
   p_reply_id bigint,
   p_requester_token_hash text
@@ -325,16 +368,20 @@ begin
   end if;
 
   update replies set is_deleted = true where id = p_reply_id;
+
+  perform delete_storage_objects(v_reply.image_paths);
 end;
 $$;
 
--- ========== 管理者専用の関数 ==========
-
 create or replace function admin_delete_reply(p_reply_id bigint) returns void
 language plpgsql security definer set search_path = public as $$
+declare
+  v_paths text[];
 begin
   perform require_admin();
+  select image_paths into v_paths from replies where id = p_reply_id;
   update replies set is_deleted = true where id = p_reply_id;
+  perform delete_storage_objects(v_paths);
 end;
 $$;
 
@@ -378,9 +425,6 @@ begin
 end;
 $$;
 
--- ========== 権限付与 ==========
--- anon = ログインしていない一般の訪問者, authenticated = ログイン済み（＝管理者）
-
 grant execute on function is_banned(text) to anon, authenticated;
 grant execute on function create_thread(text, text, text, text, text[], text) to anon, authenticated;
 grant execute on function add_reply(bigint, text, text, text, text[]) to anon, authenticated;
@@ -396,14 +440,6 @@ grant execute on function admin_unban(bigint) to authenticated;
 
 grant select on threads, replies, likes to anon, authenticated;
 grant select on reports, bans to authenticated;
-
--- ========== 画像アップロード用のストレージ ==========
--- レスに画像を添付できるようにするためのバケット。
--- ・誰でも読める（公開）
--- ・誰でもアップロードできる（ログイン不要の掲示板のため）
--- ・誰でも削除できる（レス削除時に添付画像を自動で消すため。
--- 　この掲示板はアップロードも誰でもできる設計なので、それに合わせている）
--- ファイルサイズは5MBまで、画像ファイルのみアップロード可能。
 
 insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
 values (
@@ -427,13 +463,7 @@ create policy "post-images anyone can upload"
 
 drop policy if exists "post-images admin can delete" on storage.objects;
 drop policy if exists "post-images anyone can delete" on storage.objects;
-create policy "post-images anyone can delete"
-  on storage.objects for delete
-  using (bucket_id = 'post-images');
 
--- ========== リアルタイム機能（新着レスの即時反映）==========
--- レス投稿やスレッドの状態変化を、ページをリロードしなくても
--- 他の人の画面にすぐ反映できるようにする。
 do $$
 begin
   if not exists (

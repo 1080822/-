@@ -3,7 +3,6 @@
   const myIdEl = document.getElementById('my-id');
   const toastEl = document.getElementById('toast');
 
-  // ---------- ダークモード ----------
   const THEME_KEY = 'board_theme_v1';
   function getStoredTheme() {
     try {
@@ -41,13 +40,12 @@
 
   const state = {
     isAdmin: false,
-    tab: 'active', // active | archived | bookmarks
-    sortMode: 'new', // new | ikioi
+    tab: 'active',
+    sortMode: 'new',
     reportTargetReplyId: null,
     identity: null,
   };
 
-  // ---------- ユーティリティ ----------
   function escapeHtml(str) {
     return String(str)
       .replace(/&/g, '&amp;')
@@ -61,17 +59,15 @@
     return escaped.replace(/\n/g, '<br>');
   }
 
-  // ---------- いいね数に応じた見た目 ----------
-  // 0: 今まで通り／1以上: 太字／10以上: 太字＋色、10ごとに色を変える（8色でループ）
   const LIKE_TIER_COLORS = [
-    '#e0445b', // 10〜19
-    '#ff8c42', // 20〜29
-    '#c9a400', // 30〜39
-    '#43a047', // 40〜49
-    '#00acc1', // 50〜59
-    '#3d7bfd', // 60〜69
-    '#8e5cf7', // 70〜79
-    '#e91e8c', // 80〜89（以降ループ）
+    '#e0445b',
+    '#ff8c42',
+    '#c9a400',
+    '#43a047',
+    '#00acc1',
+    '#3d7bfd',
+    '#8e5cf7',
+    '#e91e8c',
   ];
   function getLikeCountVisual(count) {
     if (!count || count <= 0) return { bold: false, color: '' };
@@ -79,7 +75,6 @@
     const tier = Math.floor(count / 10);
     return { bold: true, color: LIKE_TIER_COLORS[(tier - 1) % LIKE_TIER_COLORS.length] };
   }
-  // <span>を組み立てる文字列テンプレート用（初回描画時）
   function likeCountStyleAttr(count) {
     const v = getLikeCountVisual(count);
     if (!v.bold && !v.color) return '';
@@ -88,26 +83,20 @@
     if (v.color) style += `color:${v.color};`;
     return ` style="${style}"`;
   }
-  // 既存のDOM要素に反映する用（いいねボタンを押した直後の更新）
   function applyLikeCountVisual(el, count) {
     const v = getLikeCountVisual(count);
     el.style.fontWeight = v.bold ? '700' : '';
     el.style.color = v.color || '';
   }
 
-  // ">>3" のようなレス番号の記述を、クリックでそのレスへ移動できるリンクに変換する。
-  // escapeHtmlした後の文字列（">"は"&gt;"になっている）に対して行う。
   function linkifyRefs(escapedHtml) {
     return escapedHtml.replace(/&gt;&gt;(\d+)/g, (match, num) => {
       return `<a href="#" class="ref-link" data-num="${num}">&gt;&gt;${num}</a>`;
     });
   }
 
-  // 本文中のURL（http://・https://）を、そのままクリックできるリンクに変換する。
-  // escapeHtmlした後の文字列に対して行う。
   function linkifyUrls(escapedHtml) {
     return escapedHtml.replace(/(https?:\/\/[^\s<]+)/g, (match) => {
-      // 末尾の句読点やカッコはリンクに含めない
       const m = match.match(/^(.*?)([)\]｝」』。、,.!?！？]*)$/s);
       const url = m ? m[1] : match;
       const trail = m ? m[2] : '';
@@ -116,13 +105,8 @@
     });
   }
 
-  // ---------- YouTubeリンクのサムネイル表示 ----------
-  // 静的サイトのため、ブラウザから他サイトの中身を自由には取得できない。
-  // YouTubeは公式にブラウザからの取得（oEmbed）を許可しているので、それだけ対応する。
   const youtubeOEmbedCache = new Map();
 
-  // 動画IDを抜き出す。watch?v=... / shorts/... / live/... / youtu.be/... の
-  // どの形式で貼られても対応できるように、それぞれ別グループで拾う。
   function extractYoutubeVideos(rawContent) {
     const re =
       /https?:\/\/(?:www\.|m\.)?(?:youtube\.com\/(?:watch\?[^\s]*v=([\w-]+)|shorts\/([\w-]+)|live\/([\w-]+))|youtu\.be\/([\w-]+))[^\s]*/g;
@@ -165,7 +149,6 @@
           card.remove();
           return;
         }
-        // サムネイルが表示できたら、本文中の生のURL文字列は二重表示になるので隠す
         container.querySelectorAll('a:not(.link-preview)').forEach((a) => {
           if (a.href.includes(videoId)) a.style.display = 'none';
         });
@@ -177,9 +160,6 @@
     }
   }
 
-  // ---------- X（旧Twitter）リンクのツイート表示 ----------
-  // XもYouTubeと同様、公式のoEmbed（publish.twitter.com）でブラウザから
-  // 埋め込み用のHTMLを取得できるので、それを使って本文（ツイート内容）を表示する。
   const twitterOEmbedCache = new Map();
   let twitterWidgetsPromise = null;
 
@@ -243,7 +223,6 @@
         if (twttr && twttr.widgets) {
           twttr.widgets.load(wrap);
         }
-        // ツイートが表示できたら、本文中の生のURL文字列は二重表示になるので隠す
         container.querySelectorAll('a:not(.link-preview)').forEach((a) => {
           if (a.href.includes(tweetId)) a.style.display = 'none';
         });
@@ -251,19 +230,14 @@
     }
   }
 
-  // ---------- この掲示板の別スレッドへのリンクをカード表示 ----------
-  // 「前スレはこちら」のように、自分の掲示板の別スレッドのURLを貼ると、
-  // そのスレッドのタイトルと最初の書き込みをカードにして表示する。
   const threadPreviewCache = new Map();
 
-  // 本文中のURLのうち、このページ自身（同じorigin・同じパス）の #/thread/数字 を指しているものだけ拾う。
   function extractInternalThreadLinks(rawContent) {
     const re = /https?:\/\/[^\s<]+/g;
     const results = [];
     const seen = new Set();
     let match;
     while ((match = re.exec(rawContent)) !== null) {
-      // 末尾の句読点やカッコはURLに含めない（linkifyUrlsと同じ考え方）
       const m = match[0].match(/^(.*?)([)\]｝」』。、,.!?！？]*)$/s);
       const trimmed = m ? m[1] : match[0];
       let u;
@@ -300,7 +274,6 @@
         .single();
       const imagePaths =
         firstReply && Array.isArray(firstReply.image_paths) ? firstReply.image_paths : [];
-      // スレッドのサムネイルが設定されていればそれを優先し、無ければ最初の書き込みの添付画像を使う
       const previewImagePath = thread.thumbnail_path || (imagePaths.length > 0 ? imagePaths[0] : null);
       return {
         title: thread.title,
@@ -327,7 +300,6 @@
           card.remove();
           return;
         }
-        // カードが表示できたら、本文中の生のURL文字列は二重表示になるので隠す
         container.querySelectorAll('a:not(.link-preview):not(.thread-preview)').forEach((a) => {
           if (a.href.includes('#/thread/' + threadId)) a.style.display = 'none';
         });
@@ -351,14 +323,10 @@
     }
   }
 
-  // ---------- 画像添付（複数対応・最大4枚） ----------
   const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
   const MAX_IMAGES = 4;
   const IMAGE_BUCKET = 'post-images';
 
-  // ファイル選択欄とプレビュー一覧を1セット分まとめて面倒を見る。
-  // 戻り値の .files が現在選択中のファイル一覧（配列）。
-  // maxCount省略時は複数枚添付（MAX_IMAGES枚まで）、1を指定すると単数選択（スレッドのサムネイルなど）になる。
   function setupImageAttach(inputId, previewListId, maxCount) {
     const limit = maxCount || MAX_IMAGES;
     const input = document.getElementById(inputId);
@@ -401,9 +369,9 @@
 
     input.addEventListener('change', () => {
       const picked = Array.from(input.files || []);
-      input.value = ''; // 同じファイルを選び直せるようにリセット
+      input.value = '';
       if (limit === 1 && picked.length > 0) {
-        holder.files = []; // 単数選択の場合は選び直しで置き換える
+        holder.files = [];
       }
       for (const file of picked) {
         if (holder.files.length >= limit) {
@@ -431,10 +399,9 @@
     return holder;
   }
 
-  // ---------- 画像の自動リサイズ・圧縮（アップロード前にStorage容量を節約） ----------
-  const COMPRESS_MAX_DIM = 1600; // 長辺がこれを超える場合のみ縮小する
+  const COMPRESS_MAX_DIM = 1600;
   const COMPRESS_QUALITY = 0.82;
-  const COMPRESS_SKIP_TYPES = ['image/gif']; // GIFはアニメーションが壊れるため対象外
+  const COMPRESS_SKIP_TYPES = ['image/gif'];
 
   function loadImageFromFile(file) {
     return new Promise((resolve, reject) => {
@@ -447,11 +414,10 @@
     });
   }
 
-  // 失敗した場合やリサイズが不要な場合は、元のファイルをそのまま返す（投稿をブロックしないため）。
   async function compressImageIfNeeded(file) {
     try {
       if (COMPRESS_SKIP_TYPES.includes(file.type)) return file;
-      if (file.size <= 400 * 1024) return file; // 元から軽い画像は圧縮の恩恵が薄いのでそのまま
+      if (file.size <= 400 * 1024) return file;
       const img = await loadImageFromFile(file);
       const w = img.naturalWidth;
       const h = img.naturalHeight;
@@ -467,7 +433,7 @@
       ctx.drawImage(img, 0, 0, targetW, targetH);
       const outType = file.type === 'image/png' ? 'image/png' : 'image/jpeg';
       const blob = await new Promise((resolve) => canvas.toBlob(resolve, outType, COMPRESS_QUALITY));
-      if (!blob || blob.size >= file.size) return file; // 圧縮しても小さくならなければ元のまま
+      if (!blob || blob.size >= file.size) return file;
       const newName =
         outType === 'image/jpeg' && !/\.jpe?g$/i.test(file.name)
           ? file.name.replace(/\.[a-zA-Z0-9]+$/, '') + '.jpg'
@@ -478,9 +444,6 @@
     }
   }
 
-  // 選択中のファイルがあればSupabase Storageにすべてアップロードし、保存先パスの配列を返す。
-  // ファイルが無ければnullを返す（画像なしの投稿）。
-  // 複数枚の場合、1枚ずつ順番に待つと体感でかなり時間がかかるため、並列でアップロードする。
   async function uploadImages(rawFiles) {
     if (!rawFiles || rawFiles.length === 0) return null;
     const files = await Promise.all(rawFiles.map(compressImageIfNeeded));
@@ -511,19 +474,6 @@
     return data && data.publicUrl;
   }
 
-  // レス（またはスレッド）削除時に、添付画像もStorageから消す。
-  // 失敗してもレス自体の削除は既に完了しているので、トースト表示のみで済ませる。
-  async function deleteImagesFromStorage(paths) {
-    const list = (paths || []).filter(Boolean);
-    if (list.length === 0) return;
-    try {
-      await window.sb.storage.from(IMAGE_BUCKET).remove(list);
-    } catch (e) {
-      console.error('画像の削除に失敗しました', e);
-    }
-  }
-
-  // ---------- 画像のライトボックス（ページ内で拡大表示） ----------
   const lightboxEl = document.getElementById('lightbox');
   const lightboxImgEl = document.getElementById('lightbox-img');
   function openLightbox(src) {
@@ -541,7 +491,6 @@
   document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape' && !lightboxEl.classList.contains('hidden')) closeLightbox();
   });
-  // レス内の添付画像はページ内拡大表示にする（別タブで開くリンクは中クリック等の場合のみ使われる）
   document.addEventListener('click', (e) => {
     const img = e.target.closest('.reply-images img');
     if (img) {
@@ -550,7 +499,6 @@
     }
   });
 
-  // ---------- >>N ホバープレビュー（引用先レスの内容をポップアップ表示） ----------
   const refPreviewEl = document.createElement('div');
   refPreviewEl.className = 'ref-preview hidden';
   document.body.appendChild(refPreviewEl);
@@ -589,7 +537,6 @@
     }
     refPreviewEl.style.left = left + 'px';
     refPreviewEl.style.top = rect.bottom + 6 + 'px';
-    // 表示後に実際の高さを測り、画面下にはみ出るならリンクの上側に出し直す
     requestAnimationFrame(() => {
       if (refPreviewEl.classList.contains('hidden')) return;
       const previewRect = refPreviewEl.getBoundingClientRect();
@@ -602,7 +549,6 @@
   window.addEventListener('scroll', hideRefPreview, true);
   window.addEventListener('hashchange', hideRefPreview);
 
-  // ---------- リアルタイム（新着レスの即時反映） ----------
   let activeReplyChannel = null;
   function unsubscribeReplyChannel() {
     if (activeReplyChannel) {
@@ -611,7 +557,6 @@
     }
   }
 
-  // 検索結果から特定のレスに飛んだとき、そのスレッドの描画が終わった直後にスクロールするための予約先
   let pendingScrollToReplyNumber = null;
   function scrollToPendingReply() {
     if (pendingScrollToReplyNumber == null) return;
@@ -646,12 +591,12 @@
       invalid_input: 'タイトルまたは本文を入力してください。',
       not_found: '見つかりませんでした（削除された可能性があります）。',
       forbidden: 'この操作を行う権限がありません。',
+      rate_limited: '連続投稿はできません。少し時間をおいてからもう一度お試しください。',
     };
     const msg = err && err.message;
     return map[msg] || 'エラーが発生しました。';
   }
 
-  // ---------- 連投防止（クライアント側の目安。厳密な制限ではありません） ----------
   let lastPostAt = 0;
   function checkCooldown() {
     const now = Date.now();
@@ -660,7 +605,6 @@
     return true;
   }
 
-  // ---------- ブックマーク（ローカル保存） ----------
   const BOOKMARK_KEY = 'board_bookmarks_v1';
   function getBookmarks() {
     try {
@@ -682,7 +626,6 @@
     localStorage.setItem(BOOKMARK_KEY, JSON.stringify(list));
   }
 
-  // ---------- ルーティング ----------
   function currentRoute() {
     const hash = location.hash.replace(/^#/, '') || '/';
     const m = hash.match(/^\/thread\/(\d+)$/);
@@ -707,7 +650,6 @@
     }
   }
 
-  // ---------- 一覧画面 ----------
   async function renderList() {
     const tpl = document.getElementById('tpl-list');
     app.innerHTML = '';
@@ -820,9 +762,6 @@
       return;
     }
 
-    // ---------- 並び替え ----------
-    // 新着順＝スレッドが作成された日時が新しい順（変更しない）。
-    // 勢い順＝レスが書き込まれた時間（最終レス日時）が新しい順。
     if (state.sortMode === 'ikioi') {
       threads.sort((a, b) => b.last_reply_at - a.last_reply_at);
     } else {
@@ -873,8 +812,6 @@
     }
   }
 
-  // ---------- スレッド詳細画面 ----------
-  // 1件分のレスの<li>要素を組み立てる（初回表示・リアルタイムでの新着表示の両方で使う）
   function buildReplyEl(r, likedByMe) {
     const li = document.createElement('li');
     li.id = 'reply-' + r.number;
@@ -895,7 +832,7 @@
         <span class="reply-id">ID:${escapeHtml(r.author_id)}</span>
         <span>${formatDate(r.created_at)}</span>
       </div>
-      <div class="reply-body">${bodyHtml}</div>
+      <div class="reply-body"${likeCountStyleAttr(r.is_deleted ? 0 : r.like_count)}>${bodyHtml}</div>
       ${
         imageUrls.length > 0
           ? `<div class="reply-images">${imageUrls
@@ -914,7 +851,7 @@
           ? ''
           : `<div class="reply-actions">
               <button class="like-btn ${likedByMe ? 'liked' : ''}" data-id="${r.id}">
-                <span class="heart">♡</span><span class="like-count"${likeCountStyleAttr(r.like_count)}>${r.like_count}</span>
+                <span class="heart">♡</span><span class="like-count">${r.like_count}</span>
               </button>
               <button class="quote-link" data-num="${r.number}">返信</button>
               <button class="report-link" data-id="${r.id}">通報</button>
@@ -978,8 +915,6 @@
       ${canDeleteThread ? ' 　<button class="delete-link" id="delete-thread-btn">このスレッドを削除</button>' : ''}
     `;
 
-    // このスレッドの全レスをidで参照できるようにしておく
-    // （レス削除時の添付画像パス参照、リアルタイムで届いた新着レスの重複防止に使う）
     const repliesById = new Map();
     const repliesByNumber = new Map();
     for (const r of replies || []) {
@@ -987,8 +922,6 @@
       repliesByNumber.set(r.number, r);
     }
 
-    // ---------- 被参照（このレスが>>Nで引用されている一覧）----------
-    // 例: レス#20が本文に「>>18」を含むなら、レス#18に「↩ >>20」と表示する。
     const backrefsByNumber = new Map();
     function extractBackrefTargets(rawContent) {
       const re = />>(\d+)/g;
@@ -1032,10 +965,6 @@
           showToast(errorMessage(error));
           return;
         }
-        const allImagePaths = Array.from(repliesById.values()).flatMap((r) =>
-          Array.isArray(r.image_paths) ? r.image_paths : []
-        );
-        deleteImagesFromStorage(allImagePaths);
         showToast('削除しました。');
         location.hash = '#/';
       });
@@ -1058,8 +987,6 @@
       textarea.scrollIntoView({ behavior: 'smooth', block: 'center' });
     }
 
-    // レスへのクリック操作は一覧全体でまとめて拾う
-    // （リアルタイムで後から追加されるレスにも同じ操作を効かせるため）
     replyList.addEventListener('click', async (e) => {
       const likeBtn = e.target.closest('.like-btn');
       if (likeBtn) {
@@ -1075,7 +1002,8 @@
         likeBtn.classList.toggle('liked', row.liked);
         const countEl = likeBtn.querySelector('.like-count');
         countEl.textContent = row.like_count;
-        applyLikeCountVisual(countEl, row.like_count);
+        const replyBodyEl = likeBtn.closest('.reply-item')?.querySelector('.reply-body');
+        if (replyBodyEl) applyLikeCountVisual(replyBodyEl, row.like_count);
         return;
       }
 
@@ -1095,7 +1023,6 @@
       if (deleteBtn) {
         if (!(await askConfirm('このレスを削除します。よろしいですか？'))) return;
         const replyId = Number(deleteBtn.dataset.id);
-        const target = repliesById.get(replyId);
         const { error } = await window.sb.rpc('delete_reply', {
           p_reply_id: replyId,
           p_requester_token_hash: state.identity.tokenHash,
@@ -1103,9 +1030,6 @@
         if (error) {
           showToast(errorMessage(error));
           return;
-        }
-        if (target && Array.isArray(target.image_paths)) {
-          deleteImagesFromStorage(target.image_paths);
         }
         renderThread(id);
         return;
@@ -1125,7 +1049,6 @@
       }
     });
 
-    // >>N にカーソルを合わせると、引用先レスの内容をポップアップでプレビュー表示する
     replyList.addEventListener('mouseover', (e) => {
       const link = e.target.closest('.ref-link');
       if (!link) return;
@@ -1139,7 +1062,6 @@
       hideRefPreview();
     });
 
-    // 検索結果からこのスレッドの特定のレスへ飛んできた場合、該当レスまでスクロールする
     scrollToPendingReply();
 
     const replyForm = document.getElementById('reply-form');
@@ -1194,7 +1116,6 @@
       });
     }
 
-    // ---------- リアルタイム：他の人の新着レスをリロード無しで反映 ----------
     function appendIncomingReply(r) {
       if (!r || repliesById.has(r.id) || document.getElementById('reply-' + r.number)) return;
       repliesById.set(r.id, r);
@@ -1227,10 +1148,6 @@
       .subscribe();
   }
 
-  // ---------- 確認モーダル（削除確認用） ----------
-  // ネイティブのconfirm()は、スマホでホーム画面に追加して開いた場合（PWA的な使い方）などで
-  // ダイアログ自体が表示されずに即falseが返ってくることがあり、「削除ボタンを押しても反応しない」
-  // ように見える原因になる。そのためページ内の独自モーダルで代用する。
   const confirmModalEl = document.getElementById('confirm-modal');
   const confirmModalMessageEl = document.getElementById('confirm-modal-message');
   let confirmModalResolve = null;
@@ -1254,7 +1171,6 @@
     if (e.target === confirmModalEl) closeConfirmModal(false);
   });
 
-  // ---------- 通報モーダル ----------
   const reportModal = document.getElementById('report-modal');
   function openReportModal(replyId) {
     state.reportTargetReplyId = replyId;
@@ -1279,10 +1195,9 @@
     showToast('通報しました。ご協力ありがとうございます。');
   });
 
-  // ---------- 検索（ヘッダー直下に常時表示。スレッド検索／レス検索を切り替え） ----------
   const globalSearchInput = document.getElementById('global-search-input');
   const globalSearchResults = document.getElementById('global-search-results');
-  let searchMode = 'thread'; // thread | reply
+  let searchMode = 'thread';
   let searchDebounceTimer = null;
   let searchRequestSeq = 0;
 
@@ -1303,7 +1218,6 @@
     pendingScrollToReplyNumber = number;
     const targetHash = '#/thread/' + threadId;
     if (location.hash === targetHash) {
-      // 既に同じスレッドを開いている場合はhashchangeが発生しないので、直接スクロールする
       scrollToPendingReply();
     } else {
       location.hash = targetHash;
@@ -1408,7 +1322,6 @@
     if (e.key === 'Escape') hideSearchResults();
   });
 
-  // ---------- 起動 ----------
   window.addEventListener('hashchange', route);
   loadMe().then(route);
 })();

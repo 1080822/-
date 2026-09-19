@@ -623,7 +623,6 @@ a:hover { text-decoration: underline; }
 
 .hidden { display: none !important; }
 
-/* ---------- スマホ表示向けの調整 ---------- */
 @media (max-width: 640px) {
   .site-header-inner { padding: 10px 12px; }
   .global-search-inner { padding: 8px 12px; }
